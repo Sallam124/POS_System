@@ -13,7 +13,6 @@ from Admin.Utilities.data import DataTable
 from datetime import datetime
 import hashlib
 import pandas as pd
-
 import matplotlib.pyplot as plt
 from kivy.garden.matplotlib.backend_kivyagg import FigureCanvasKivyAgg as MTP
 
@@ -22,53 +21,70 @@ Builder.load_file('Admin/Admin.kv')
 class Notify(ModalView):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-
         self.size_hint = (.7,.7)
 
 class AdminWindow(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        client = MongoClient()
-        db = client.Pos
-        self.users = db.users
-        self.products = db.stocks
-        self.notify = Notify()
+        try:
+            client = MongoClient()
+            db = client.Pos
+            self.users = db.users
+            self.products = db.stocks
+            self.notify = Notify()
 
-        product_code = []
-        product_name = []
-        spinvals = []
-        for product in self.products.find():
-            product_code.append(product['product_code'])
-            name = product['product_name']
-            if len(name) > 30:
-                name = name[:30] + '...'
-            product_name.append(name)
+            product_code = []
+            product_name = []
+            spinvals = []
+            for product in self.products.find():
+                if 'product_code' not in product or 'product_name' not in product:
+                    continue
+                
+                code = product.get('product_code', '')
+                name = product.get('product_name', '')
+                if len(name) > 30:
+                    name = name[:30] + '...'
+                
+                product_code.append(code)
+                product_name.append(name)
+                spinvals.append(f"{code} | {name}")
 
-        for x in range(len(product_code)):
-            line = ' | '.join([product_code[x],product_name[x]])
-            spinvals.append(line)
-        self.ids.target_product.values = spinvals
+            self.ids.target_product.values = spinvals
 
-        content = self.ids.scrn_contents
-        users = self.get_users()
-        userstable = DataTable(table=users)
-        content.add_widget(userstable)
+            # Display Users
+            content = self.ids.scrn_contents
+            users = self.get_users()
+            userstable = DataTable(table=users)
+            content.add_widget(userstable)
 
-        #Display Products
-        product_scrn = self.ids.scrn_product_contents
-        products = self.get_products()
-        prod_table = DataTable(table=products)
-        product_scrn.add_widget(prod_table)
+            # Display Products
+            product_scrn = self.ids.scrn_product_contents
+            products = self.get_products()
+            prod_table = DataTable(table=products)
+            product_scrn.add_widget(prod_table)
+
+        except Exception as e:
+            print(f"Error initializing AdminWindow: {str(e)}")
+            self.notify.add_widget(Label(text=f'[color=#FF0000][b]Database Error: {str(e)}[/b][/color]', markup=True))
+            self.notify.open()
+            Clock.schedule_once(self.killswitch, 3)
 
     def add_user_fields(self):
         target = self.ids.ops_fields
         target.clear_widgets()
-        crud_first = TextInput(hint_text='First Name',multiline=False)
-        crud_last = TextInput(hint_text='Last Name',multiline=False)
-        crud_user = TextInput(hint_text='User Name',multiline=False)
-        crud_pwd = TextInput(hint_text='Password',multiline=False)
-        crud_des = Spinner(text='Operator',values=['Operator','Administrator'])
-        crud_submit = Button(text='Add',size_hint_x=None,width=100,on_release=lambda x: self.add_user(crud_first.text,crud_last.text,crud_user.text,crud_pwd.text,crud_des.text))
+        crud_first = TextInput(hint_text='First Name', multiline=False)
+        crud_last = TextInput(hint_text='Last Name', multiline=False)
+        crud_user = TextInput(hint_text='User Name', multiline=False)
+        crud_pwd = TextInput(hint_text='Password', multiline=False)
+        crud_des = Spinner(text='Operator', values=['Operator', 'Administrator'])
+        crud_submit = Button(
+            text='Add', size_hint_x=None, width=100,
+            on_release=lambda x: self.add_user(
+                crud_first.text, crud_last.text, 
+                crud_user.text, crud_pwd.text, 
+                crud_des.text
+            )
+        )
 
         target.add_widget(crud_first)
         target.add_widget(crud_last)
@@ -81,14 +97,22 @@ class AdminWindow(BoxLayout):
         target = self.ids.ops_fields_p
         target.clear_widgets()
 
-        crud_code = TextInput(hint_text='Product Code',multiline=False)
-        crud_name = TextInput(hint_text='Product Name',multiline=False)
-        crud_weight = TextInput(hint_text='Product Weight',multiline=False)
-        crud_stock = TextInput(hint_text='Product In Stock',multiline=False)
-        crud_sold = TextInput(hint_text='Products Sold',multiline=False)
-        crud_barcode_number = TextInput(hint_text='Barcode_number',multiline=False)
-        crud_purchase = TextInput(hint_text='Last Purchase',multiline=False)
-        crud_submit = Button(text='Add',size_hint_x=None,width=100,on_release=lambda x: self.add_product(crud_code.text,crud_name.text,crud_weight.text,crud_stock.text,crud_sold.text,crud_barcode_number.text,crud_purchase.text))
+        crud_code = TextInput(hint_text='Product Code', multiline=False)
+        crud_name = TextInput(hint_text='Product Name', multiline=False)
+        crud_weight = TextInput(hint_text='Product Weight', multiline=False)
+        crud_stock = TextInput(hint_text='Product In Stock', multiline=False)
+        crud_sold = TextInput(hint_text='Products Sold', multiline=False)
+        crud_barcode_number = TextInput(hint_text='Barcode Number', multiline=False)
+        crud_purchase = TextInput(hint_text='Last Purchase', multiline=False)
+        crud_submit = Button(
+            text='Add', size_hint_x=None, width=100,
+            on_release=lambda x: self.add_product(
+                crud_code.text, crud_name.text, 
+                crud_weight.text, crud_stock.text, 
+                crud_sold.text, crud_barcode_number.text, 
+                crud_purchase.text
+            )
+        )
 
         target.add_widget(crud_code)
         target.add_widget(crud_name)
@@ -98,72 +122,116 @@ class AdminWindow(BoxLayout):
         target.add_widget(crud_barcode_number)
         target.add_widget(crud_purchase)
         target.add_widget(crud_submit)
-        
-    def add_user(self, first,last,user,pwd,des):
-        
-        pwd = hashlib.sha256(pwd.encode()).hexdigest()
-        if first == '' or last == '' or user == '' or pwd == '':
-            self.notify.add_widget(Label(text='[color=#FF0000][b]All Fields Required[/b][/color]',markup=True))
-            self.notify.open()
-            Clock.schedule_once(self.killswitch,1)
-        else:
-            self.users.insert_one({'first_name':first,'last_name':last,
-        'user_name':user,'password':pwd,'designation':des,'date':datetime.now()})
-            content = self.ids.scrn_contents
-            content.clear_widgets()
 
-            users = self.get_users()
-            userstable = DataTable(table=users)
-            content.add_widget(userstable)
-    
-    def killswitch(self,dtx):
+    def add_user(self, first, last, user, pwd, des):
+        try:
+            if not all([first, last, user, pwd]):
+                self.show_error("All fields are required")
+                return
+
+            pwd = hashlib.sha256(pwd.encode()).hexdigest()
+            self.users.insert_one({
+                'first_name': first,
+                'last_name': last,
+                'user_name': user,
+                'password': pwd,
+                'designation': des,
+                'date': datetime.now()
+            })
+            
+            self.refresh_users_table()
+            
+        except Exception as e:
+            self.show_error(f"Error adding user: {str(e)}")
+
+    def add_product(self, code, name, weight, stock, sold, barcode_number, purchase):
+        try:
+            if not all([code, name, weight, stock, barcode_number]):
+                self.show_error("Required fields: code, name, weight, stock, barcode")
+                return
+
+            self.products.insert_one({
+                'product_code': code,
+                'product_name': name,
+                'product_weight': weight,
+                'in_stock': stock,
+                'sold': sold,
+                'barcode_number': barcode_number,
+                'last_purchase': purchase
+            })
+            
+            self.refresh_products_table()
+            
+        except Exception as e:
+            self.show_error(f"Error adding product: {str(e)}")
+
+    def show_error(self, message):
+        self.notify.add_widget(Label(text=f'[color=#FF0000][b]{message}[/b][/color]', markup=True))
+        self.notify.open()
+        Clock.schedule_once(self.killswitch, 2)
+
+    def killswitch(self, dt):
         self.notify.dismiss()
         self.notify.clear_widgets()
 
-    def add_product(self,code,name,weight,stock,sold,barcode_number,purchase):
-        
-        if code == '' or name == '' or weight == '' or stock == '' or barcode_number == '': 
-            self.notify.add_widget(Label(text='[color=#FF0000][b]All Fields Required[/b][/color]',markup=True))
-            self.notify.open()
-            Clock.schedule_once(self.killswitch,1)
-        else:
-            self.products.insert_one({'product_code':code,'product_name':name,'product_weight':weight,'in_stock':stock,'sold':sold,'barcode_number':barcode_number,'last_purchase':purchase})
-            content = self.ids.scrn_product_contents
-            content.clear_widgets()
+    def refresh_users_table(self):
+        content = self.ids.scrn_contents
+        content.clear_widgets()
+        users = self.get_users()
+        userstable = DataTable(table=users)
+        content.add_widget(userstable)
 
-            prodz = self.get_products()
-            stocktable = DataTable(table=prodz)
-            content.add_widget(stocktable)
+    def refresh_products_table(self):
+        content = self.ids.scrn_product_contents
+        content.clear_widgets()
+        products = self.get_products()
+        prod_table = DataTable(table=products)
+        content.add_widget(prod_table)
 
     def update_user_fields(self):
         target = self.ids.ops_fields
         target.clear_widgets()
-        crud_first = TextInput(hint_text='First Name',multiline=False)
-        crud_last = TextInput(hint_text='Last Name',multiline=False)
-        crud_user = TextInput(hint_text='User Name',multiline=False)
-        crud_pwd = TextInput(hint_text='Password',multiline=False)
-        crud_des = Spinner(text='Operator',values=['Operator','Administrator'])
-        crud_submit = Button(text='Update',size_hint_x=None,width=100,on_release=lambda x: self.update_user(crud_first.text,crud_last.text,crud_user.text,crud_pwd.text,crud_des.text))
+        crud_user = TextInput(hint_text='User Name to Update', multiline=False)
+        crud_first = TextInput(hint_text='New First Name', multiline=False)
+        crud_last = TextInput(hint_text='New Last Name', multiline=False)
+        crud_pwd = TextInput(hint_text='New Password', multiline=False)
+        crud_des = Spinner(text='Operator', values=['Operator', 'Administrator'])
+        crud_submit = Button(
+            text='Update', size_hint_x=None, width=100,
+            on_release=lambda x: self.update_user(
+                crud_user.text, crud_first.text, 
+                crud_last.text, crud_pwd.text, 
+                crud_des.text
+            )
+        )
 
+        target.add_widget(crud_user)
         target.add_widget(crud_first)
         target.add_widget(crud_last)
-        target.add_widget(crud_user)
         target.add_widget(crud_pwd)
         target.add_widget(crud_des)
         target.add_widget(crud_submit)
-    
+
     def update_product_fields(self):
         target = self.ids.ops_fields_p
         target.clear_widgets()
 
-        crud_code = TextInput(hint_text='Product Code',multiline=False)
-        crud_name = TextInput(hint_text='Product Name',multiline=False)
-        crud_weight = TextInput(hint_text='Product Weight',multiline=False)
-        crud_stock = TextInput(hint_text='Product In Stock',multiline=False)
-        crud_sold = TextInput(hint_text='Products Sold',multiline=False)
-        crud_barcode_number = TextInput(hint_text='Barcode_number',multiline=False)
-        crud_purchase = TextInput(hint_text='Last Purchase',multiline=False)
-        crud_submit = Button(text='Update',size_hint_x=None,width=100,on_release=lambda x: self.update_product(crud_code.text,crud_name.text,crud_weight.text,crud_stock.text,crud_sold.text,crud_barcode_number.text,crud_purchase.text))
+        crud_code = TextInput(hint_text='Product Code to Update', multiline=False)
+        crud_name = TextInput(hint_text='New Product Name', multiline=False)
+        crud_weight = TextInput(hint_text='New Product Weight', multiline=False)
+        crud_stock = TextInput(hint_text='New In Stock', multiline=False)
+        crud_sold = TextInput(hint_text='New Sold', multiline=False)
+        crud_barcode_number = TextInput(hint_text='New Barcode', multiline=False)
+        crud_purchase = TextInput(hint_text='New Last Purchase', multiline=False)
+        crud_submit = Button(
+            text='Update', size_hint_x=None, width=100,
+            on_release=lambda x: self.update_product(
+                crud_code.text, crud_name.text, 
+                crud_weight.text, crud_stock.text, 
+                crud_sold.text, crud_barcode_number.text, 
+                crud_purchase.text
+            )
+        )
 
         target.add_widget(crud_code)
         target.add_widget(crud_name)
@@ -173,173 +241,140 @@ class AdminWindow(BoxLayout):
         target.add_widget(crud_barcode_number)
         target.add_widget(crud_purchase)
         target.add_widget(crud_submit)
-    
-    
-    def update_user(self, first,last,user,pwd,des):
-        
-        pwd = hashlib.sha256(pwd.encode()).hexdigest()
-        if user == '':
-            self.notify.add_widget(Label(text='[color=#FF0000][b]All Fields Required[/b][/color]',markup=True))
-            self.notify.open()
-            Clock.schedule_once(self.killswitch,1)
-        else:
-            user = self.users.find_one({'user_name':user})
-            if user == None:
-                self.notify.add_widget(Label(text='[color=#FF0000][b]Invalid Username[/b][/color]',markup=True))
-                self.notify.open()
-                Clock.schedule_once(self.killswitch,1)
-            else:
-                if first == '':
-                    first = user['first_name']
-                if last == '':
-                    last = user['last_name']
-                if pwd == '':
-                    pwd = user['password']
-                self.users.update_one({'user_name':user},{'$set':{'first_name':first,'last_name':last,'user_name':user,'password':pwd,'designation':des,'date':datetime.now()}})
-                content = self.ids.scrn_contents
-                content.clear_widgets()
 
-                users = self.get_users()
-                userstable = DataTable(table=users)
-                content.add_widget(userstable)
-    
-    def update_product(self,code,name,weight,stock,sold,barcode_number,purchase):
+    def update_user(self, user, first, last, pwd, des):
+        try:
+            if not user:
+                self.show_error("Username is required")
+                return
 
-        if code == '':
-            self.notify.add_widget(Label(text='[color=#FF0000][b]Code required[/b][/color]',markup=True))
-            self.notify.open()
-            Clock.schedule_once(self.killswitch,1)
-        else:
-            target_code = self.products.find_one({'product_code':code})
-            if target_code == None:
-                self.notify.add_widget(Label(text='[color=#FF0000][b]Invalid Code[/b][/color]',markup=True))
-                self.notify.open()
-                Clock.schedule_once(self.killswitch,1)
-            else:
-                if name == '':
-                    name = target_code['product_name']
-                if product_weight == '':
-                    product_weight = target_code['product_weight']
-                if stock == '':
-                    stock = target_code['in_stock']
-                if sold == '':
-                    sold = target_code['sold']
-                if barcode_number == '':
-                    barcode_number = target_code['barcode_number']
-                if purchase == '':
-                    purchase = target_code['last_purchase']
-                content = self.ids.scrn_product_contents
-                content.clear_widgets()
-                    
-                self.products.update_one({'product_code':code},{'$set':{'product_code':code,'product_name':name,'product_weight':weight,'in_stock':stock,'sold':sold,'barcode_number':barcode_number,'last_purchase':purchase}})
-    
-                prodz = self.get_products()
-                stocktable = DataTable(table=prodz)
-                content.add_widget(stocktable)
-    
+            target_user = self.users.find_one({'user_name': user})
+            if not target_user:
+                self.show_error("User not found")
+                return
+
+            update_data = {'date': datetime.now()}
+            if first: update_data['first_name'] = first
+            if last: update_data['last_name'] = last
+            if pwd: update_data['password'] = hashlib.sha256(pwd.encode()).hexdigest()
+            if des: update_data['designation'] = des
+
+            self.users.update_one({'user_name': user}, {'$set': update_data})
+            self.refresh_users_table()
+            
+        except Exception as e:
+            self.show_error(f"Error updating user: {str(e)}")
+
+    def update_product(self, code, name, weight, stock, sold, barcode_number, purchase):
+        try:
+            if not code:
+                self.show_error("Product code is required")
+                return
+
+            target_product = self.products.find_one({'product_code': code})
+            if not target_product:
+                self.show_error("Product not found")
+                return
+
+            update_data = {}
+            if name: update_data['product_name'] = name
+            if weight: update_data['product_weight'] = weight
+            if stock: update_data['in_stock'] = stock
+            if sold: update_data['sold'] = sold
+            if barcode_number: update_data['barcode_number'] = barcode_number
+            if purchase: update_data['last_purchase'] = purchase
+
+            self.products.update_one({'product_code': code}, {'$set': update_data})
+            self.refresh_products_table()
+            
+        except Exception as e:
+            self.show_error(f"Error updating product: {str(e)}")
+
     def remove_user_fields(self):
         target = self.ids.ops_fields
         target.clear_widgets()
-        crud_user = TextInput(hint_text='User Name')
-        crud_submit = Button(text='Remove',size_hint_x=None,width=100,on_release=lambda x: self.remove_user(crud_user.text))
+        crud_user = TextInput(hint_text='User Name to Remove')
+        crud_submit = Button(
+            text='Remove', size_hint_x=None, width=100,
+            on_release=lambda x: self.remove_user(crud_user.text)
+        )
 
         target.add_widget(crud_user)
         target.add_widget(crud_submit)
-    
+
     def remove_product_fields(self):
         target = self.ids.ops_fields_p
         target.clear_widgets()
-        crud_code = TextInput(hint_text='Product Code')
-        crud_submit = Button(text='Remove',size_hint_x=None,width=100,on_release=lambda x: self.remove_product(crud_code.text))
+        crud_code = TextInput(hint_text='Product Code to Remove')
+        crud_submit = Button(
+            text='Remove', size_hint_x=None, width=100,
+            on_release=lambda x: self.remove_product(crud_code.text)
+        )
 
         target.add_widget(crud_code)
         target.add_widget(crud_submit)
 
-    def remove_user(self,user):
+    def remove_user(self, user):
+        try:
+            if not user:
+                self.show_error("Username is required")
+                return
 
-        if user == '':
-            self.notify.add_widget(Label(text='[color=#FF0000][b]All Fields Required[/b][/color]',markup=True))
-            self.notify.open()
-            Clock.schedule_once(self.killswitch,1)
-        else:
-            target_user = self.users.find_one({'user_name':user})
-            if target_user == None:
-                self.notify.add_widget(Label(text='[color=#FF0000][b]Invalid UserName[/b][/color]',markup=True))
-                self.notify.open()
-                Clock.schedule_once(self.killswitch,1)
-            else:
-                content = self.ids.scrn_contents
-                content.clear_widgets()
+            target_user = self.users.find_one({'user_name': user})
+            if not target_user:
+                self.show_error("User not found")
+                return
 
-                self.users.remove({'user_name':user})
+            self.users.delete_one({'user_name': user})
+            self.refresh_users_table()
+            
+        except Exception as e:
+            self.show_error(f"Error removing user: {str(e)}")
 
-                users = self.get_users()
-                userstable = DataTable(table=users)
-                content.add_widget(userstable)
-    
-    def remove_product(self,code):
-        if code == '':
-            self.notify.add_widget(Label(text='[color=#FF0000][b]All Fields Required[/b][/color]',markup=True))
-            self.notify.open()
-            Clock.schedule_once(self.killswitch,1)
-        else:
-            target_code = self.products.find_one({'product_code':code})
-            if target_code == None:
-                self.notify.add_widget(Label(text='[color=#FF0000][b]Invalid Code[/b][/color]',markup=True))
-                self.notify.open()
-                Clock.schedule_once(self.killswitch,1)
-            else:
-                content = self.ids.scrn_product_contents
-                content.clear_widgets()
+    def remove_product(self, code):
+        try:
+            if not code:
+                self.show_error("Product code is required")
+                return
 
-                self.products.remove({'product_code':code})
+            target_product = self.products.find_one({'product_code': code})
+            if not target_product:
+                self.show_error("Product not found")
+                return
 
-                prodz = self.get_products()
-                stocktable = DataTable(table=prodz)
-                content.add_widget(stocktable)
+            self.products.delete_one({'product_code': code})
+            self.refresh_products_table()
+            
+        except Exception as e:
+            self.show_error(f"Error removing product: {str(e)}")
 
     def get_users(self):
-        client = MongoClient()
-        db = client.Pos
-        users = db.users
         _users = OrderedDict()
         _users['first_names'] = {}
         _users['last_names'] = {}
         _users['user_names'] = {}
         _users['passwords'] = {}
         _users['designations'] = {}
-        first_names = []
-        last_names = []
-        user_names = []
-        passwords = []
-        designations = []
-        for user in users.find():
-            first_names.append(user['first_name'])
-            last_names.append(user['last_name'])
-            user_names.append(user['user_name'])
-            pwd = user['password']
-            if len(pwd) > 10:
-                pwd = pwd[:10] + '...'
-            passwords.append(pwd)
-            designations.append(user['designation'])
-        # print(designations)
-        users_length = len(first_names)
-        idx = 0
-        while idx < users_length:
-            _users['first_names'][idx] = first_names[idx]
-            _users['last_names'][idx] = last_names[idx]
-            _users['user_names'][idx] = user_names[idx]
-            _users['passwords'][idx] = passwords[idx]
-            _users['designations'][idx] = designations[idx]
 
-            idx += 1
-        
+        try:
+            for idx, user in enumerate(self.users.find()):
+                _users['first_names'][idx] = user.get('first_name', '')
+                _users['last_names'][idx] = user.get('last_name', '')
+                _users['user_names'][idx] = user.get('user_name', '')
+                
+                pwd = user.get('password', '')
+                if len(pwd) > 10:
+                    pwd = pwd[:10] + '...'
+                _users['passwords'][idx] = pwd
+                
+                _users['designations'][idx] = user.get('designation', '')
+                
+        except Exception as e:
+            print(f"Error getting users: {str(e)}")
+            
         return _users
 
     def get_products(self):
-        client = MongoClient()
-        db = client.Pos
-        products = db.stocks
         _stocks = OrderedDict()
         _stocks['product_code'] = {}
         _stocks['product_name'] = {}
@@ -349,75 +384,68 @@ class AdminWindow(BoxLayout):
         _stocks['barcode_number'] = {}
         _stocks['last_purchase'] = {}
 
-        product_code = []
-        product_name = []
-        product_weight = []
-        in_stock = []
-        sold = []
-        barcode_number = []
-        last_purchase = []
-
-        for product in products.find():
-            product_code.append(product['product_code'])
-            name = product['product_name']
-            if len(name) > 10:
-                name = name[:10] + '...'
-            product_name.append(name)
-            product_weight.append(product['product_weight'])
-            in_stock.append(product['in_stock'])
-            try:
-                sold.append(product['sold'])
-            except KeyError:
-                sold.append('')
-            try:
-                barcode_number.append(product['barcode_number'])
-            except KeyError:
-                barcode_number.append('')
-            try:
-                last_purchase.append(product['last_purchase'])
-            except KeyError:
-                last_purchase.append('')
-        # print(designations)
-        products_length = len(product_code)
-        idx = 0
-        while idx < products_length:
-            _stocks['product_code'][idx] = product_code[idx]
-            _stocks['product_name'][idx] = product_name[idx]
-            _stocks['product_weight'][idx] = product_weight[idx]
-            _stocks['in_stock'][idx] = in_stock[idx]
-            _stocks['sold'][idx] = sold[idx]
-            _stocks['barcode_number'][idx] = barcode_number[idx]
-            _stocks['last_purchase'][idx] = last_purchase[idx]
-           
-
-            idx += 1
-        
+        try:
+            for idx, product in enumerate(self.products.find()):
+                _stocks['product_code'][idx] = product.get('product_code', '')
+                
+                name = product.get('product_name', '')
+                if len(name) > 10:
+                    name = name[:10] + '...'
+                _stocks['product_name'][idx] = name
+                
+                _stocks['product_weight'][idx] = product.get('product_weight', '')
+                _stocks['in_stock'][idx] = product.get('in_stock', '')
+                _stocks['sold'][idx] = product.get('sold', '')
+                _stocks['barcode_number'][idx] = product.get('barcode_number', '')
+                _stocks['last_purchase'][idx] = product.get('last_purchase', '')
+                
+        except Exception as e:
+            print(f"Error getting products: {str(e)}")
+            
         return _stocks
 
     def view_stats(self):
-        plt.cla()
-        self.ids.analysis_res.clear_widgets()
-        target_product = self.ids.target_product.text
-        target = target_product[:target_product.find(' | ')]
-        name = target_product[target_product.find(' | '):]       
+        try:
+            plt.cla()
+            self.ids.analysis_res.clear_widgets()
+            
+            target_product = self.ids.target_product.text
+            if not target_product or ' | ' not in target_product:
+                self.show_error("Please select a product")
+                return
+                
+            target = target_product[:target_product.find(' | ')]
+            name = target_product[target_product.find(' | ') + 3:]
 
-        df = pd.read_csv("C:\\Users\\salla\\OneDrive\\Desktop\\Integrative-Project\\Admin\\products_purchase.csv")
-        purchases = []
-        dates = []
-        count = 0
-        for x in range(len(df)):
-            if str(df.Product_Code[x]) == target:
-                purchases.append(df.Purchased[x])
-                dates.append(count)
-                count+=1
-        plt.bar(dates,purchases,color='teal',label=name)
-        plt.ylabel('Total Purchases')
-        plt.xlabel('day')
+            df = pd.read_csv("Admin/products_purchase.csv")
+            purchases = []
+            dates = []
+            count = 0
+            
+            for x in range(len(df)):
+                if str(df.Product_Code[x]) == target:
+                    purchases.append(df.Purchased[x])
+                    dates.append(count)
+                    count += 1
+                    
+            if not purchases:
+                self.show_error("No purchase data found")
+                return
+                
+            plt.bar(dates, purchases, color='teal', label=name)
+            plt.ylabel('Total Purchases')
+            plt.xlabel('Day')
+            plt.legend()
 
-        self.ids.analysis_res.add_widget(MTP(plt.gcf()))
-
+            self.ids.analysis_res.add_widget(MTP(plt.gcf()))
+            
+        except Exception as e:
+            self.show_error(f"Error generating stats: {str(e)}")
 
     def change_screen(self, instance):
+        if not instance.text:
+            return
+            
         if instance.text == 'Manage Products':
             self.ids.scrn_mngr.current = 'scrn_product_content'
         elif instance.text == 'Manage Users':
@@ -425,11 +453,9 @@ class AdminWindow(BoxLayout):
         else:
             self.ids.scrn_mngr.current = 'scrn_analysis'
 
-
 class AdminApp(App):
     def build(self):
-
         return AdminWindow()
 
-if __name__=='__main__':
+if __name__ == '__main__':
     AdminApp().run()
